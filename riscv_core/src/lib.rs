@@ -22,6 +22,12 @@ pub struct Cpu;
 #[verilog(src = "../rtl/common/top.sv", name = "top")]
 pub struct Top;
 
+#[verilog(
+    src = "../rtl/common/wrappers/top_sim_test_wrapper.sv",
+    name = "top_sim_test_wrapper"
+)]
+pub struct TopSim;
+
 // Define ALU module
 #[verilog(src = "../rtl/common/cpu/alu.sv", name = "alu")]
 pub struct Alu;
@@ -436,6 +442,7 @@ pub fn create_cpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Erro
         "cpu/writeback_mux.sv",
         "fpu/fp_regfile.sv", // RV32F FP register file
         "fpu/fpu.sv",        // RV32F floating point unit
+        "wrappers/top_sim_test_wrapper.sv",
     ])
 }
 

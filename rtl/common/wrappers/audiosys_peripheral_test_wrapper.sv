@@ -19,6 +19,8 @@ module audiosys_peripheral_test_wrapper (
     output logic [1:0]       debug_audio_mode_active,
     output logic             debug_i2s_sample_ready,
     output logic signed [15:0] debug_i2s_sample_data,
+    output logic signed [15:0] debug_fifo_right_hold,
+    output logic             debug_fifo_frame_valid,
     output logic [31:0]      debug_fifo_count,
     output logic [31:0]      debug_fifo_space
 );
@@ -47,8 +49,10 @@ module audiosys_peripheral_test_wrapper (
     assign debug_audio_mode_active = u_audiosys_peripheral.audio_mode_active;
     assign debug_i2s_sample_ready = u_audiosys_peripheral.i2s_sample_ready;
     assign debug_i2s_sample_data = u_audiosys_peripheral.i2s_sample_data;
-    assign debug_fifo_count = u_audiosys_peripheral.fifo_count;
-    assign debug_fifo_space = u_audiosys_peripheral.fifo_space_count;
+    assign debug_fifo_right_hold = u_audiosys_peripheral.fifo_right_hold;
+    assign debug_fifo_frame_valid = u_audiosys_peripheral.fifo_frame_valid;
+    assign debug_fifo_count = 32'(u_audiosys_peripheral.fifo_count);
+    assign debug_fifo_space = 32'(u_audiosys_peripheral.fifo_space_count);
 
 endmodule
 

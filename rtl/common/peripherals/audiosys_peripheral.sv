@@ -94,7 +94,7 @@ module audiosys_peripheral #(
     endfunction
 
     initial begin
-        if ((AUDIO_FIFO_DEPTH & (AUDIO_FIFO_DEPTH - 1)) != 0 || AUDIO_FIFO_DEPTH < 2) begin
+        if ((AUDIO_FIFO_DEPTH < 2) || ((AUDIO_FIFO_DEPTH & (AUDIO_FIFO_DEPTH - 1)) != 0)) begin
             $fatal(
                 1,
                 "audiosys_peripheral: AUDIO_FIFO_DEPTH must be power of 2 and >= 2, got %0d",
@@ -256,9 +256,12 @@ module audiosys_peripheral #(
         if (audio_rst) begin
             audio_mode_active <= AUDIO_MODE_OFF;
         end else if (audio_mode_active != audio_mode_req_reg) begin
-            if (((audio_mode_active == AUDIO_MODE_TONE) || (audio_mode_req_reg == AUDIO_MODE_TONE))
-                ? tone_mode_switch_ok
-                : audio_frame_boundary) begin
+            if (((audio_mode_active == AUDIO_MODE_TONE) && (audio_mode_req_reg == AUDIO_MODE_FIFO))
+                || ((audio_mode_active == AUDIO_MODE_FIFO) && (audio_mode_req_reg == AUDIO_MODE_TONE))) begin
+                if (tone_mode_switch_ok) begin
+                    audio_mode_active <= audio_mode_req_reg;
+                end
+            end else if (audio_frame_boundary) begin
                 audio_mode_active <= audio_mode_req_reg;
             end
         end

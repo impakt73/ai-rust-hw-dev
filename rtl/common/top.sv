@@ -202,6 +202,19 @@ module top #(
     logic        cpu_halted_internal;
     logic        external_meip;
     logic [INTERRUPT_CTRL_NUM_SOURCES-1:0] external_irq_sources;
+    localparam int unsigned AUDIOSYS_IRQ_SOURCE_INDEX = 4;
+    localparam int unsigned AUDIOSYS_IRQ_SOURCE_COUNT_MIN = AUDIOSYS_IRQ_SOURCE_INDEX + 1;
+
+    initial begin
+        if (ENABLE_AUDIOSYS && (INTERRUPT_CTRL_NUM_SOURCES < AUDIOSYS_IRQ_SOURCE_COUNT_MIN)) begin
+            $fatal(
+                1,
+                "top: audiosys interrupt wiring requires INTERRUPT_CTRL_NUM_SOURCES >= %0d, got %0d",
+                AUDIOSYS_IRQ_SOURCE_COUNT_MIN,
+                INTERRUPT_CTRL_NUM_SOURCES
+            );
+        end
+    end
     // Slave 0 = system controller, slave 1 = SRAM, slave 2 = interrupt controller,
     // slave 3 = optional SDRAM,
     // and each enabled optional peripheral shifts the later indices forward.
@@ -796,8 +809,8 @@ module top #(
 
     always_comb begin
         external_irq_sources = '0;
-        if (ENABLE_AUDIOSYS && (INTERRUPT_CTRL_NUM_SOURCES > 4)) begin
-            external_irq_sources[4] = audiosys_fifo_low_water_irq;
+        if (ENABLE_AUDIOSYS && (INTERRUPT_CTRL_NUM_SOURCES > AUDIOSYS_IRQ_SOURCE_INDEX)) begin
+            external_irq_sources[AUDIOSYS_IRQ_SOURCE_INDEX] = audiosys_fifo_low_water_irq;
         end
     end
 

@@ -3,7 +3,7 @@
 module external_interrupt_controller_test_wrapper (
     input  wire logic        clk,
     input  wire logic        rst,
-    input  wire logic [3:0]  irq_sources,
+    input  wire logic [4:0]  irq_sources,
     input  wire logic [31:0] mem_a_addr,
     input  wire logic [31:0] mem_a_wdata,
     input  wire logic        mem_a_we,
@@ -17,7 +17,7 @@ module external_interrupt_controller_test_wrapper (
 );
 
     external_interrupt_controller #(
-        .NUM_SOURCES(4)
+        .NUM_SOURCES(5)
     ) u_external_interrupt_controller (
         .clk(clk),
         .rst(rst),
