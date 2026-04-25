@@ -199,17 +199,23 @@ Machine-mode external interrupt controller with one target context, source-ID pr
 
 ### Audiosys Peripheral (0x60000000)
 
-Pocket-target audio tone generator control registers.
+Pocket-target audio system mode, tone-generator, and FIFO playback registers.
 
 | Offset | Register | Access | Description |
 |--------|----------|--------|-------------|
-| 0x00   | CONTROL | RW | Bit 0 enables audio output; bits [31:1] are reserved |
+| 0x00   | MODE | RW | `0=off`, `1=tone generator`, `2=fifo playback`; other values are reserved and read back as `0` |
 | 0x04   | TUNING_WORD | RW | Phase increment / tuning word for the tone generator |
+| 0x08   | FIFO_SAMPLE | WO | 32-bit stereo sample write port; left channel in bits `[31:16]`, right in `[15:0]` |
+| 0x0C   | FIFO_SPACE | RO | Number of additional stereo samples the FIFO can currently accept |
 
 - **Size:** 32 bytes (`0x60000000 – 0x6000001F`)
 - **Access sizes:** Only aligned 32-bit word accesses are supported. Other access sizes are acknowledged and ignored.
 - **Latency:** CPU accesses cross from `sys_clk` into `audio_clk` through `bus_cdc_bridge`.
-- **Constants:** `AUDIOSYS_BASE`, `AUDIOSYS_SIZE`, `AUDIOSYS_CONTROL_OFFSET`, `AUDIOSYS_TUNING_WORD_OFFSET`, `AUDIOSYS_CONTROL_ENABLE`, `audiosys_control_addr()`, `audiosys_tuning_word_addr()`
+- **FIFO depth:** Parameterized in RTL as a count of 32-bit stereo samples; the default build holds 1024 entries.
+- **Stereo ordering:** Samples use the usual packed-stereo convention `left[31:16] | right[15:0]`, matching the I2S left-then-right transmit order.
+- **Full FIFO writes:** Software is expected to check `FIFO_SPACE` before writing. Writes attempted while the FIFO is full are acknowledged and dropped.
+- **Interrupt behavior:** In fifo mode, audiosys asserts external interrupt source ID 5 whenever FIFO occupancy drops below half full. The signal is synchronized back into `sys_clk` before reaching the interrupt controller and remains level-asserted until software refills above the threshold.
+- **Constants:** `AUDIOSYS_BASE`, `AUDIOSYS_SIZE`, `AUDIOSYS_MODE_OFFSET`, `AUDIOSYS_TUNING_WORD_OFFSET`, `AUDIOSYS_FIFO_SAMPLE_OFFSET`, `AUDIOSYS_FIFO_SPACE_OFFSET`, `AUDIOSYS_MODE_OFF`, `AUDIOSYS_MODE_TONE`, `AUDIOSYS_MODE_FIFO`, `audiosys_mode_addr()`, `audiosys_fifo_sample_addr()`, `audiosys_fifo_space_addr()`, `audiosys_tuning_word_addr()`
 
 ### SRAM Peripheral (0x70000000)
 

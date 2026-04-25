@@ -6,7 +6,7 @@ use bus_shared::{
 };
 use riscv_core::trace::InstructionTrace;
 use riscv_core::AsDynamicVerilatedModel;
-use riscv_core::{Top, Vcd, VerilatedModelConfig, VerilatorRuntime};
+use riscv_core::{TopSim, Vcd, VerilatedModelConfig, VerilatorRuntime};
 use std::time::Instant;
 
 /// Maximum number of clock cycles allowed for any boot phase before timing out
@@ -58,7 +58,7 @@ where
 {
     // CRITICAL: Fields must be in this order for safe drop semantics
     // 1. CPU (dependent) MUST be declared FIRST - drops first
-    pub(crate) cpu: Top<'static>,
+    pub(crate) cpu: TopSim<'static>,
     vcd: Option<Vcd<'static>>,
 
     // 2. Runtime (owner) MUST be declared AFTER cpu - drops last
@@ -89,6 +89,13 @@ impl<T> Simulator<T>
 where
     T: FnMut(&InstructionTrace),
 {
+    fn drive_clocks(&mut self, level: u8) {
+        self.cpu.clk = level;
+        self.cpu.video_clk = level;
+        self.cpu.audio_clk = level;
+        self.cpu.sdram_clk = level;
+    }
+
     /// Create a new simulator with optional callbacks
     ///
     /// The runtime, bus, and hung detector are created and owned internally using
@@ -141,7 +148,7 @@ where
             };
 
             let mut cpu = runtime_ref
-                .create_model::<Top>(&config)
+                .create_model::<TopSim>(&config)
                 .map_err(|e| format!("Failed to create CPU model: {}", e))?;
 
             // Open VCD file if path is provided
@@ -479,17 +486,17 @@ where
 
         // Drive reset high (active-high reset)
         self.cpu.rst = 1;
-        self.cpu.clk = 0;
+        self.drive_clocks(0);
         self.cpu.eval();
         self.dump_vcd(); // Capture initial state with reset asserted, clk=0
 
         // First clock edge during reset
-        self.cpu.clk = 1;
+        self.drive_clocks(1);
         self.cpu.eval();
         self.dump_vcd(); // Capture state after rising edge during reset
 
         // Second clock cycle during reset (falling edge)
-        self.cpu.clk = 0;
+        self.drive_clocks(0);
         self.cpu.eval();
         self.dump_vcd(); // Capture state after falling edge during reset
 
@@ -542,10 +549,10 @@ where
     /// protocol and clock edge. It does NOT increment cycle_count, call
     /// bus.clock_cycle_all_devices(), run hung detector checks, or print FSM state.
     fn boot_clock_cycle(&mut self) {
-        self.cpu.clk = 0;
+        self.drive_clocks(0);
         self.cpu.eval();
         self.handle_host_bus_interface();
-        self.cpu.clk = 1;
+        self.drive_clocks(1);
         self.cpu.eval();
         self.dump_vcd();
     }
@@ -571,7 +578,7 @@ where
         let start_time = Instant::now();
 
         // Clock edge
-        self.cpu.clk = 0;
+        self.drive_clocks(0);
         self.cpu.eval();
 
         // Handle host bus interface protocol
@@ -594,7 +601,7 @@ where
             );
         }
 
-        self.cpu.clk = 1;
+        self.drive_clocks(1);
         self.cpu.eval();
 
         // Increment cycle count

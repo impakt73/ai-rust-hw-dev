@@ -6,8 +6,9 @@ use riscv_shared::bus::{
     INTERRUPT_CTRL_BASE, INTERRUPT_CTRL_CLAIM_OFFSET, INTERRUPT_CTRL_COMPLETE_OFFSET,
     INTERRUPT_CTRL_ENABLE_OFFSET, INTERRUPT_CTRL_PENDING_CLEAR_OFFSET,
     INTERRUPT_CTRL_PENDING_OFFSET, INTERRUPT_CTRL_PENDING_SET_OFFSET,
-    INTERRUPT_CTRL_RAW_STATUS_OFFSET, INTERRUPT_CTRL_SOURCE_COUNT_OFFSET,
-    INTERRUPT_CTRL_SOURCE_TEST0, INTERRUPT_CTRL_SOURCE_TEST1, INTERRUPT_CTRL_SOURCE_TEST2,
+    INTERRUPT_CTRL_RAW_STATUS_OFFSET, INTERRUPT_CTRL_SOURCE_AUDIOSYS_FIFO_LOW_WATER,
+    INTERRUPT_CTRL_SOURCE_COUNT_OFFSET, INTERRUPT_CTRL_SOURCE_TEST0, INTERRUPT_CTRL_SOURCE_TEST1,
+    INTERRUPT_CTRL_SOURCE_TEST2,
 };
 
 const MEM_SIZE_WORD: u8 = 2;
@@ -129,7 +130,7 @@ fn test_external_interrupt_controller_reports_source_count_and_reset_state() {
             &mut dut,
             INTERRUPT_CTRL_BASE + INTERRUPT_CTRL_SOURCE_COUNT_OFFSET
         ),
-        4
+        INTERRUPT_CTRL_SOURCE_AUDIOSYS_FIFO_LOW_WATER
     );
     assert_eq!(
         read_access(
@@ -279,5 +280,50 @@ fn test_external_interrupt_controller_pending_clear_deasserts_meip() {
     assert_eq!(
         dut.meip, 0,
         "Clearing the last pending source must drop meip"
+    );
+}
+
+#[test]
+fn test_external_interrupt_controller_supports_audiosys_source_id() {
+    let runtime = create_external_interrupt_controller_runtime()
+        .expect("Failed to create interrupt controller runtime");
+    let mut dut = runtime
+        .create_model_simple::<ExternalInterruptControllerTestWrapper>()
+        .expect("Failed to create interrupt controller model");
+
+    reset(&mut dut);
+
+    let audiosys_mask = 1 << (INTERRUPT_CTRL_SOURCE_AUDIOSYS_FIFO_LOW_WATER - 1);
+
+    write_access(
+        &mut dut,
+        INTERRUPT_CTRL_BASE + INTERRUPT_CTRL_ENABLE_OFFSET,
+        audiosys_mask,
+    );
+    write_access(
+        &mut dut,
+        INTERRUPT_CTRL_BASE + INTERRUPT_CTRL_PENDING_SET_OFFSET,
+        audiosys_mask,
+    );
+
+    assert_eq!(dut.meip, 1, "enabled audiosys source must assert meip");
+    assert_eq!(
+        read_access(&mut dut, INTERRUPT_CTRL_BASE + INTERRUPT_CTRL_CLAIM_OFFSET),
+        INTERRUPT_CTRL_SOURCE_AUDIOSYS_FIFO_LOW_WATER,
+        "controller must claim the audiosys fifo low-water source ID"
+    );
+
+    write_access(
+        &mut dut,
+        INTERRUPT_CTRL_BASE + INTERRUPT_CTRL_COMPLETE_OFFSET,
+        INTERRUPT_CTRL_SOURCE_AUDIOSYS_FIFO_LOW_WATER,
+    );
+    assert_eq!(
+        read_access(
+            &mut dut,
+            INTERRUPT_CTRL_BASE + INTERRUPT_CTRL_PENDING_OFFSET
+        ),
+        0,
+        "completing the audiosys source should clear its pending bit"
     );
 }

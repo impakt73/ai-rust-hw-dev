@@ -3,6 +3,7 @@
 module audiosys_peripheral #(
     parameter int unsigned AUDIO_PHASE_WIDTH = 32,
     parameter int unsigned AUDIO_TABLE_SIZE = 1024,
+    parameter int unsigned AUDIO_FIFO_DEPTH = 1024,
     parameter int unsigned I2S_OUTPUT_SAMPLE_WIDTH = 31,
     parameter int unsigned BUS_CDC_SYNC_STAGES = 3,
     parameter INIT_FILE = ""
@@ -20,11 +21,19 @@ module audiosys_peripheral #(
     output logic             mem_d_valid,
     input  wire logic        mem_d_ready,
     output logic             audio_dac,
-    output logic             audio_lrclk
+    output logic             audio_lrclk,
+    output logic             fifo_low_water_irq
 );
 
-    localparam logic [4:0] REG_CONTROL = 5'h00;
+    localparam logic [4:0] REG_MODE        = 5'h00;
     localparam logic [4:0] REG_TUNING_WORD = 5'h04;
+    localparam logic [4:0] REG_FIFO_SAMPLE = 5'h08;
+    localparam logic [4:0] REG_FIFO_SPACE  = 5'h0C;
+
+    localparam logic [1:0] AUDIO_MODE_OFF  = 2'd0;
+    localparam logic [1:0] AUDIO_MODE_TONE = 2'd1;
+    localparam logic [1:0] AUDIO_MODE_FIFO = 2'd2;
+    localparam int unsigned AUDIO_FIFO_COUNT_WIDTH = $clog2(AUDIO_FIFO_DEPTH) + 1;
 
     logic reset_n_audio_sync;
     logic audio_rst;
@@ -46,10 +55,10 @@ module audiosys_peripheral #(
     logic        response_pending;
 
     logic [AUDIO_PHASE_WIDTH-1:0] tuning_word_reg;
-    logic                         audio_enable_req_reg;
-    logic                         audio_en;
-    logic                         audio_sample_en;
-    logic                         audio_en_update;
+    logic [1:0]                   audio_mode_req_reg;
+    logic [1:0]                   audio_mode_active;
+    logic                         audio_frame_boundary;
+    logic                         tone_mode_switch_ok;
     logic signed [15:0]           tone_sample;
     logic signed [15:0]           i2s_sample_data;
     logic signed [15:0]           tone_sample_hold;
@@ -58,12 +67,51 @@ module audiosys_peripheral #(
     logic                         tone_sample_valid;
     logic                         tone_zero_cross;
 
+    logic                         fifo_wr_valid;
+    logic                         fifo_wr_ready;
+    logic [31:0]                  fifo_wdata;
+    logic                         fifo_rd_valid;
+    logic                         fifo_rd_ready;
+    logic [31:0]                  fifo_rdata;
+    logic [AUDIO_FIFO_COUNT_WIDTH-1:0] fifo_count;
+    logic [AUDIO_FIFO_COUNT_WIDTH-1:0] fifo_space_count;
+    logic signed [15:0]           fifo_right_hold;
+    logic                         fifo_frame_valid;
+    logic                         fifo_left_reload;
+    logic                         fifo_low_water_audio;
+
+    function automatic logic [1:0] sanitize_audio_mode(input logic [31:0] mode_value);
+        logic [1:0] mode_bits;
+        begin
+            mode_bits = mode_value[1:0];
+            case (mode_bits)
+                AUDIO_MODE_OFF,
+                AUDIO_MODE_TONE,
+                AUDIO_MODE_FIFO: sanitize_audio_mode = mode_bits;
+                default: sanitize_audio_mode = AUDIO_MODE_OFF;
+            endcase
+        end
+    endfunction
+
+    initial begin
+        if ((AUDIO_FIFO_DEPTH < 2) || ((AUDIO_FIFO_DEPTH & (AUDIO_FIFO_DEPTH - 1)) != 0)) begin
+            $fatal(
+                1,
+                "audiosys_peripheral: AUDIO_FIFO_DEPTH must be power of 2 and >= 2, got %0d",
+                AUDIO_FIFO_DEPTH
+            );
+        end
+    end
+
     assign periph_mem_a_handshake = periph_mem_a_valid && periph_mem_a_ready;
     assign periph_mem_d_handshake = periph_mem_d_valid && periph_mem_d_ready;
-    assign periph_mem_a_ready = !audio_rst && !response_pending;
     assign periph_mem_d_rdata = response_data;
     assign periph_mem_d_valid = response_pending;
     assign periph_word_access = (periph_mem_a_size == 2'b10) && (periph_mem_a_addr[1:0] == 2'b00);
+
+    assign periph_mem_a_ready =
+        !audio_rst
+        && !response_pending;
 
     ff_sync #(
         .STAGES(BUS_CDC_SYNC_STAGES),
@@ -108,19 +156,58 @@ module audiosys_peripheral #(
         .periph_mem_d_ready(periph_mem_d_ready)
     );
 
-    // audio_lrclk still reflects the previous slot until the serializer reloads on
-    // this clock edge, so audio_lrclk=1 means the serializer is about to load the
-    // first channel of the next stereo pair and should see a fresh sample. Before
-    // the hold register has been seeded after reset, always bypass it so the first
-    // stereo frame does not transmit zeros.
-    assign i2s_sample_data = (audio_lrclk || !tone_sample_hold_valid) ? tone_sample : tone_sample_hold;
-    assign audio_en_update = i2s_sample_ready && tone_zero_cross && tone_sample_valid;
-    assign audio_sample_en = audio_en_update ? audio_enable_req_reg : audio_en;
+    assign audio_frame_boundary = i2s_sample_ready && audio_lrclk;
+    assign tone_mode_switch_ok = audio_frame_boundary && tone_zero_cross && tone_sample_valid;
+
+    assign fifo_wdata = periph_mem_a_wdata;
+    assign fifo_wr_valid =
+        periph_mem_a_handshake
+        && periph_word_access
+        && periph_mem_a_we
+        && (periph_mem_a_addr[4:0] == REG_FIFO_SAMPLE)
+        && (audio_mode_req_reg == AUDIO_MODE_FIFO);
+    assign fifo_rd_ready =
+        (audio_mode_active == AUDIO_MODE_FIFO)
+        && i2s_sample_ready
+        && fifo_left_reload;
+    assign fifo_space_count = AUDIO_FIFO_COUNT_WIDTH'(AUDIO_FIFO_DEPTH) - fifo_count;
+    // i2s_serializer presents sample_ready while audio_lrclk still reflects the channel that
+    // just completed, so reloading on audio_lrclk==1 aligns the next FIFO pop with the upcoming
+    // left-channel word and avoids an extra retry term.
+    assign fifo_left_reload = audio_lrclk;
+    assign fifo_low_water_audio =
+        (audio_mode_active == AUDIO_MODE_FIFO)
+        && (fifo_count < AUDIO_FIFO_COUNT_WIDTH'(AUDIO_FIFO_DEPTH / 2));
+
+    always_comb begin
+        unique case (audio_mode_active)
+            AUDIO_MODE_TONE: begin
+                i2s_sample_data =
+                    (audio_lrclk || !tone_sample_hold_valid) ? tone_sample : tone_sample_hold;
+            end
+            AUDIO_MODE_FIFO: begin
+                if (fifo_left_reload) begin
+                    if (fifo_rd_valid) begin
+                        i2s_sample_data = fifo_rdata[31:16];
+                    end else begin
+                        i2s_sample_data = '0;
+                    end
+                end else begin
+                    // Suppress stale right-channel hold data until a valid stereo frame has
+                    // actually been popped from the FIFO.
+                    i2s_sample_data = fifo_frame_valid ? fifo_right_hold : '0;
+                end
+            end
+            default: begin
+                i2s_sample_data = '0;
+            end
+        endcase
+    end
 
     always_ff @(posedge audio_clk) begin
         if (audio_rst) begin
             tuning_word_reg <= '0;
-            audio_enable_req_reg <= 1'b0;
+            audio_mode_req_reg <= AUDIO_MODE_OFF;
             response_pending <= 1'b0;
         end else begin
             if (periph_mem_d_handshake) begin
@@ -128,23 +215,22 @@ module audiosys_peripheral #(
             end
 
             if (periph_mem_a_handshake) begin
-                // response_data intentionally is not reset because response_pending
-                // marks when the payload is meaningful.
                 response_data <= 32'h0000_0000;
                 response_pending <= 1'b1;
 
                 if (periph_word_access) begin
                     if (periph_mem_a_we) begin
-                        case (periph_mem_a_addr[4:0])
+                        unique case (periph_mem_a_addr[4:0])
+                            REG_MODE: audio_mode_req_reg <= sanitize_audio_mode(periph_mem_a_wdata);
                             REG_TUNING_WORD: tuning_word_reg <= periph_mem_a_wdata;
-                            REG_CONTROL: audio_enable_req_reg <= periph_mem_a_wdata[0];
                             default: begin
                             end
                         endcase
                     end else begin
-                        case (periph_mem_a_addr[4:0])
+                        unique case (periph_mem_a_addr[4:0])
+                            REG_MODE: response_data <= {30'h0000_0000, audio_mode_req_reg};
                             REG_TUNING_WORD: response_data <= tuning_word_reg;
-                            REG_CONTROL: response_data <= {31'h0000_0000, audio_enable_req_reg};
+                            REG_FIFO_SPACE: response_data <= {{(32-AUDIO_FIFO_COUNT_WIDTH){1'b0}}, fifo_space_count};
                             default: response_data <= 32'h0000_0000;
                         endcase
                     end
@@ -166,11 +252,59 @@ module audiosys_peripheral #(
 
     always_ff @(posedge audio_clk) begin
         if (audio_rst) begin
-            audio_en <= 1'b0;
-        end else if (audio_en_update) begin
-            audio_en <= audio_enable_req_reg;
+            audio_mode_active <= AUDIO_MODE_OFF;
+        end else if (audio_mode_active != audio_mode_req_reg) begin
+            if (((audio_mode_active == AUDIO_MODE_TONE) && (audio_mode_req_reg == AUDIO_MODE_FIFO))
+                || ((audio_mode_active == AUDIO_MODE_FIFO) && (audio_mode_req_reg == AUDIO_MODE_TONE))) begin
+                if (tone_mode_switch_ok) begin
+                    audio_mode_active <= audio_mode_req_reg;
+                end
+            end else if (audio_frame_boundary) begin
+                audio_mode_active <= audio_mode_req_reg;
+            end
         end
     end
+
+    always_ff @(posedge audio_clk) begin
+        if (audio_rst) begin
+            fifo_frame_valid <= 1'b0;
+        end else if (audio_mode_active != AUDIO_MODE_FIFO) begin
+            fifo_frame_valid <= 1'b0;
+        end else if (i2s_sample_ready && fifo_left_reload) begin
+            if (fifo_rd_valid) begin
+                fifo_right_hold <= fifo_rdata[15:0];
+                fifo_frame_valid <= 1'b1;
+            end else begin
+                fifo_frame_valid <= 1'b0;
+            end
+        end
+    end
+
+    sync_fifo #(
+        .WIDTH(32),
+        .DEPTH(AUDIO_FIFO_DEPTH)
+    ) u_audio_fifo (
+        .clk(audio_clk),
+        .rst(audio_rst),
+        .wr_valid(fifo_wr_valid),
+        .wr_ready(fifo_wr_ready),
+        .wdata(fifo_wdata),
+        .rd_valid(fifo_rd_valid),
+        .rd_ready(fifo_rd_ready),
+        .rdata(fifo_rdata),
+        .count(fifo_count)
+    );
+
+    ff_sync #(
+        .STAGES(BUS_CDC_SYNC_STAGES),
+        .WIDTH(1),
+        .RESET_VALUE(1'b0)
+    ) audiosys_irq_sync (
+        .clk(sys_clk),
+        .rst(rst),
+        .din(fifo_low_water_audio),
+        .dout(fifo_low_water_irq)
+    );
 
     tone_generator #(
         .PHASE_WIDTH (AUDIO_PHASE_WIDTH),
@@ -193,7 +327,9 @@ module audiosys_peripheral #(
         .clk         (audio_clk),
         .rst         (audio_rst),
         .sample_data (i2s_sample_data),
-        .sample_valid(audio_sample_en && tone_sample_valid),
+        .sample_valid(
+            (audio_mode_active == AUDIO_MODE_TONE) ? tone_sample_valid : (audio_mode_active != AUDIO_MODE_OFF)
+        ),
         .sample_ready(i2s_sample_ready),
         .i2s_bclk    (),
         .i2s_lrclk   (audio_lrclk),
