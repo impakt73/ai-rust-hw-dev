@@ -118,8 +118,7 @@ module audiosys_peripheral #(
 
     assign periph_mem_a_ready =
         !audio_rst
-        && !response_pending
-        && (!fifo_sample_write_req || fifo_wr_ready);
+        && !response_pending;
 
     ff_sync #(
         .STAGES(BUS_CDC_SYNC_STAGES),
@@ -177,7 +176,7 @@ module audiosys_peripheral #(
     assign fifo_rd_ready =
         (audio_mode_active == AUDIO_MODE_FIFO)
         && i2s_sample_ready
-        && (audio_lrclk || !fifo_frame_valid);
+        && (!audio_lrclk || !fifo_frame_valid);
     assign fifo_space_count = AUDIO_FIFO_COUNT_WIDTH'(AUDIO_FIFO_DEPTH) - fifo_count;
     assign fifo_low_water_audio =
         (audio_mode_active == AUDIO_MODE_FIFO)
@@ -190,7 +189,7 @@ module audiosys_peripheral #(
                     (audio_lrclk || !tone_sample_hold_valid) ? tone_sample : tone_sample_hold;
             end
             AUDIO_MODE_FIFO: begin
-                if (audio_lrclk || !fifo_frame_valid) begin
+                if (!audio_lrclk || !fifo_frame_valid) begin
                     if (fifo_rd_valid) begin
                         i2s_sample_data = fifo_rdata[31:16];
                     end else begin
@@ -272,7 +271,7 @@ module audiosys_peripheral #(
             fifo_frame_valid <= 1'b0;
         end else if (audio_mode_active != AUDIO_MODE_FIFO) begin
             fifo_frame_valid <= 1'b0;
-        end else if (i2s_sample_ready && (audio_lrclk || !fifo_frame_valid)) begin
+        end else if (i2s_sample_ready && (!audio_lrclk || !fifo_frame_valid)) begin
             if (fifo_rd_valid) begin
                 fifo_right_hold <= fifo_rdata[15:0];
                 fifo_frame_valid <= 1'b1;

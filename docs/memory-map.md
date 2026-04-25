@@ -212,6 +212,8 @@ Pocket-target audio system mode, tone-generator, and FIFO playback registers.
 - **Access sizes:** Only aligned 32-bit word accesses are supported. Other access sizes are acknowledged and ignored.
 - **Latency:** CPU accesses cross from `sys_clk` into `audio_clk` through `bus_cdc_bridge`.
 - **FIFO depth:** Parameterized in RTL as a count of 32-bit stereo samples; the default build holds 1024 entries.
+- **Stereo ordering:** Samples use the usual packed-stereo convention `left[31:16] | right[15:0]`, matching the I2S left-then-right transmit order.
+- **Full FIFO writes:** Software is expected to check `FIFO_SPACE` before writing. Writes attempted while the FIFO is full are acknowledged and dropped.
 - **Interrupt behavior:** In fifo mode, audiosys asserts external interrupt source ID 5 whenever FIFO occupancy drops below half full. The signal is synchronized back into `sys_clk` before reaching the interrupt controller and remains level-asserted until software refills above the threshold.
 - **Constants:** `AUDIOSYS_BASE`, `AUDIOSYS_SIZE`, `AUDIOSYS_MODE_OFFSET`, `AUDIOSYS_TUNING_WORD_OFFSET`, `AUDIOSYS_FIFO_SAMPLE_OFFSET`, `AUDIOSYS_FIFO_SPACE_OFFSET`, `AUDIOSYS_MODE_OFF`, `AUDIOSYS_MODE_TONE`, `AUDIOSYS_MODE_FIFO`, `audiosys_mode_addr()`, `audiosys_fifo_sample_addr()`, `audiosys_fifo_space_addr()`, `audiosys_tuning_word_addr()`
 

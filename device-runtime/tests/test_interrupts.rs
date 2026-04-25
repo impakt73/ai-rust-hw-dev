@@ -107,7 +107,7 @@ fn test_host_injected_external_interrupt_claim_complete_flow() {
         }
         assert!(
             wait_start.elapsed() < LONG_TIMEOUT,
-            "audiosys interrupt handler did not reach the expected count before timeout"
+            "external interrupt handler for injected INTERRUPT_CTRL_SOURCE_TEST1 did not reach the expected count before timeout"
         );
         std::thread::sleep(Duration::from_millis(1));
     }
@@ -178,7 +178,7 @@ fn test_audiosys_fifo_low_water_interrupt_refill_flow() {
     let mut current_space =
         read_word_with_timeout(runtime.as_mut(), audiosys_fifo_space_addr(), MEDIUM_TIMEOUT);
     while current_space >= (AUDIOSYS_FIFO_DEPTH / 2) {
-        for _ in 0..64 {
+        for _ in 0..current_space {
             write_word_with_timeout(
                 runtime.as_mut(),
                 audiosys_fifo_sample_addr(),
@@ -257,7 +257,7 @@ fn test_audiosys_fifo_low_water_interrupt_refill_flow() {
     let refill_start = Instant::now();
     let mut second_space_after = second_space_before;
     while second_space_after >= (AUDIOSYS_FIFO_DEPTH / 2) {
-        for _ in 0..16 {
+        for _ in 0..second_space_after {
             write_word_with_timeout(
                 runtime.as_mut(),
                 audiosys_fifo_sample_addr(),

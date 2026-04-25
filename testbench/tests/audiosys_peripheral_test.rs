@@ -137,30 +137,6 @@ fn begin_write_access(dut: &mut AudiosysPeripheralTestWrapper, addr: u32, wdata:
     dut.eval();
 }
 
-fn finish_pending_write(dut: &mut AudiosysPeripheralTestWrapper, max_cycles: usize) {
-    for _ in 0..max_cycles {
-        if dut.mem_a_ready != 0 {
-            break;
-        }
-        clock_cycle!(dut);
-    }
-
-    assert_eq!(dut.mem_a_ready, 1, "pending write never became ready");
-
-    clock_cycle!(dut);
-    dut.mem_a_valid = 0;
-    dut.mem_a_we = 0;
-    dut.eval();
-
-    wait_for_response(dut, 64);
-    assert_eq!(dut.mem_d_rdata, 0, "write ack payload must stay zero");
-
-    dut.mem_d_ready = 1;
-    clock_cycle!(dut);
-    dut.mem_d_ready = 0;
-    dut.eval();
-}
-
 fn complete_immediate_write(dut: &mut AudiosysPeripheralTestWrapper) {
     assert_eq!(dut.mem_a_ready, 1, "expected write to already be accepted");
 
@@ -383,7 +359,7 @@ fn test_audiosys_fifo_space_tracks_writes_and_playback() {
 }
 
 #[test]
-fn test_audiosys_fifo_full_write_waits_for_available_space() {
+fn test_audiosys_fifo_full_write_drops_excess_samples() {
     let _guard = audiosys_test_lock();
     let runtime =
         create_audiosys_peripheral_runtime().expect("Failed to create audiosys peripheral runtime");
@@ -407,18 +383,7 @@ fn test_audiosys_fifo_full_write_waits_for_available_space() {
     }
     assert_eq!(
         dut.debug_fifo_space, 0,
-        "test must fill the fifo before stalling"
-    );
-
-    for _ in 0..128 {
-        if dut.debug_i2s_sample_ready == 0 {
-            break;
-        }
-        clock_cycle!(dut);
-    }
-    assert_eq!(
-        dut.debug_i2s_sample_ready, 0,
-        "test must present the pending write away from a sample-drain boundary"
+        "test must fill the fifo before checking drop behavior"
     );
 
     begin_write_access(
@@ -426,14 +391,14 @@ fn test_audiosys_fifo_full_write_waits_for_available_space() {
         AUDIOSYS_FIFO_SAMPLE_ADDR,
         pack_stereo_sample(0x5555, 0xAAAA),
     );
-    if dut.mem_a_ready == 0 {
-        finish_pending_write(&mut dut, 4096);
-    } else {
-        complete_immediate_write(&mut dut);
-    }
-    assert!(
-        dut.debug_fifo_space <= 1,
-        "once a sample drains, the pending write should reclaim the freed slot"
+    assert_eq!(
+        dut.mem_a_ready, 1,
+        "writes to a full fifo must complete immediately and be dropped"
+    );
+    complete_immediate_write(&mut dut);
+    assert_eq!(
+        dut.debug_fifo_space, 0,
+        "dropped writes must not consume or free fifo space"
     );
 }
 
@@ -509,9 +474,13 @@ fn test_audiosys_fifo_playback_uses_written_stereo_samples() {
     );
 
     let observed = collect_sample_ready_values(&mut dut, 2, 4096);
-    assert!(
-        observed.contains(&expected[0]),
-        "fifo playback must present the written left-channel sample; observed={observed:X?}"
+    assert_eq!(
+        observed[0], expected[0],
+        "fifo playback must present the packed left channel first; observed={observed:X?}"
+    );
+    assert_eq!(
+        observed[1], expected[1],
+        "fifo playback must present the packed right channel second; observed={observed:X?}"
     );
     assert!(
         dut.debug_fifo_count < TEST_FIFO_DEPTH,
@@ -542,9 +511,9 @@ fn test_audiosys_fifo_underrun_outputs_zero_and_keeps_irq_asserted() {
     wait_for_fifo_space(&mut dut, TEST_FIFO_DEPTH, 4096);
     wait_for_irq_level(&mut dut, true, 256);
 
-    let observed = collect_sample_ready_values(&mut dut, 4, 4096);
+    let observed = collect_sample_ready_values(&mut dut, 5, 4096);
     assert!(
-        observed.iter().all(|&value| value == 0),
-        "underrun should drive zero-valued sample words, observed={observed:X?}"
+        observed[1..].iter().all(|&value| value == 0),
+        "underrun should drain any in-flight right-channel sample and then drive zeros, observed={observed:X?}"
     );
 }

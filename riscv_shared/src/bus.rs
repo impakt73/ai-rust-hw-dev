@@ -181,7 +181,8 @@ pub const AUDIOSYS_MODE_OFF: u32 = 0;
 pub const AUDIOSYS_MODE_TONE: u32 = 1;
 pub const AUDIOSYS_MODE_FIFO: u32 = 2;
 
-/// FIFO stereo sample packing: left channel in bits [31:16], right in [15:0].
+/// FIFO stereo sample packing: left channel in bits [31:16], right in [15:0]
+/// so the serializer transmits left first on LRCLK=0, then right on LRCLK=1.
 pub const AUDIOSYS_FIFO_SAMPLE_LEFT_SHIFT: u32 = 16;
 pub const AUDIOSYS_FIFO_SAMPLE_RIGHT_SHIFT: u32 = 0;
 pub const AUDIOSYS_FIFO_SAMPLE_CHANNEL_MASK: u32 = 0xFFFF;
