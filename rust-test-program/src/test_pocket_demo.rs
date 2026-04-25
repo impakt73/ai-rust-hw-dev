@@ -115,9 +115,10 @@ fn reset_audio_sample_index() {
 fn generate_fifo_sample_word() -> u32 {
     let (frequency_div, sample_index) = critical_section::with(|cs| {
         let frequency_div = AUDIO_FREQUENCY_DIV.borrow(cs).get();
-        let sample_index_cell = AUDIO_SAMPLE_INDEX.borrow(cs);
-        let sample_index = sample_index_cell.get();
-        sample_index_cell.set(sample_index.wrapping_add(1));
+        let sample_index = AUDIO_SAMPLE_INDEX.borrow(cs).get();
+        AUDIO_SAMPLE_INDEX
+            .borrow(cs)
+            .set(sample_index.wrapping_add(1));
         (frequency_div, sample_index)
     });
     let sample = generate_sine_sample(sample_index, frequency_div);
@@ -125,15 +126,16 @@ fn generate_fifo_sample_word() -> u32 {
     audiosys_fifo_pack_stereo_sample(packed_sample, packed_sample)
 }
 
-fn fill_audio_fifo(samples_to_write: u32, max_fill_samples: u32) {
-    let fill_count = samples_to_write.min(max_fill_samples);
+fn fill_audio_fifo(requested_samples: u32, max_fill_samples: u32) {
+    let fill_count = requested_samples.min(max_fill_samples);
     for _ in 0..fill_count {
         write_u32(audiosys_fifo_sample_addr(), generate_fifo_sample_word());
     }
 }
 
-fn fill_audio_fifo_exact(samples_to_write: u32) {
-    fill_audio_fifo(samples_to_write, u32::MAX);
+/// Fill the requested number of FIFO slots without applying the ISR refill cap.
+fn fill_audio_fifo_exact(requested_samples: u32) {
+    fill_audio_fifo(requested_samples, u32::MAX);
 }
 
 #[external_interrupt(PocketExternalInterrupt::MachineExternal)]
