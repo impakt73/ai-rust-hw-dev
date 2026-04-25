@@ -6,9 +6,10 @@ mod common;
 #[global_allocator]
 static HEAP: common::Heap = common::Heap::empty();
 
+use core::cell::Cell;
 use core::panic::PanicInfo;
 use core::ptr::{read_volatile, write_volatile};
-use core::sync::atomic::{AtomicU32, Ordering};
+use critical_section::Mutex;
 use riscv::result::{Error, Result};
 use riscv::{ExternalInterruptNumber, InterruptNumber};
 use riscv_rt::{entry, external_interrupt};
@@ -28,6 +29,7 @@ use riscv_shared::generate_sine_sample;
 const AUDIO_FIFO_LOW_WATER_INTERRUPT_NUMBER: usize =
     INTERRUPT_CTRL_SOURCE_AUDIOSYS_FIFO_LOW_WATER as usize;
 const INITIAL_FREQUENCY_DIV: u32 = 16;
+const MAX_INTERRUPT_FILL_SAMPLES: u32 = 256;
 const MIN_FREQUENCY_DIV: u32 = 1;
 const MAX_FREQUENCY_DIV: u32 = 64;
 
@@ -38,8 +40,8 @@ const TILE_ONE: u8 = 1;
 const PALETTE_ORANGE: u32 = 0x00FF_A500;
 const PALETTE_TEAL: u32 = 0x0000_8080;
 
-static AUDIO_FREQUENCY_DIV: AtomicU32 = AtomicU32::new(INITIAL_FREQUENCY_DIV);
-static AUDIO_SAMPLE_INDEX: AtomicU32 = AtomicU32::new(0);
+static AUDIO_FREQUENCY_DIV: Mutex<Cell<u32>> = Mutex::new(Cell::new(INITIAL_FREQUENCY_DIV));
+static AUDIO_SAMPLE_INDEX: Mutex<Cell<u32>> = Mutex::new(Cell::new(0));
 
 struct DemoState {
     frame_index: u32,
@@ -98,16 +100,34 @@ fn write_u8(addr: u32, value: u8) {
     }
 }
 
+fn set_audio_frequency_div(frequency_div: u32) {
+    critical_section::with(|cs| {
+        AUDIO_FREQUENCY_DIV.borrow(cs).set(frequency_div);
+    });
+}
+
+fn reset_audio_sample_index() {
+    critical_section::with(|cs| {
+        AUDIO_SAMPLE_INDEX.borrow(cs).set(0);
+    });
+}
+
 fn generate_fifo_sample_word() -> u32 {
-    let frequency_div = AUDIO_FREQUENCY_DIV.load(Ordering::Relaxed);
-    let sample_index = AUDIO_SAMPLE_INDEX.fetch_add(1, Ordering::Relaxed);
+    let (frequency_div, sample_index) = critical_section::with(|cs| {
+        let frequency_div = AUDIO_FREQUENCY_DIV.borrow(cs).get();
+        let sample_index_cell = AUDIO_SAMPLE_INDEX.borrow(cs);
+        let sample_index = sample_index_cell.get();
+        sample_index_cell.set(sample_index.wrapping_add(1));
+        (frequency_div, sample_index)
+    });
     let sample = generate_sine_sample(sample_index, frequency_div);
     let packed_sample = u16::from_ne_bytes(sample.to_ne_bytes());
     audiosys_fifo_pack_stereo_sample(packed_sample, packed_sample)
 }
 
-fn fill_audio_fifo(samples_to_write: u32) {
-    for _ in 0..samples_to_write {
+fn fill_audio_fifo(samples_to_write: u32, max_samples: u32) {
+    let fill_count = samples_to_write.min(max_samples);
+    for _ in 0..fill_count {
         write_u32(audiosys_fifo_sample_addr(), generate_fifo_sample_word());
     }
 }
@@ -121,7 +141,7 @@ fn machine_external() {
 
     if claimed_source == INTERRUPT_CTRL_SOURCE_AUDIOSYS_FIFO_LOW_WATER {
         let fifo_space = read_u32(audiosys_fifo_space_addr());
-        fill_audio_fifo(fifo_space);
+        fill_audio_fifo(fifo_space, MAX_INTERRUPT_FILL_SAMPLES);
     }
 
     write_u32(interrupt_ctrl_complete_addr(), claimed_source);
@@ -130,7 +150,8 @@ fn machine_external() {
 fn enable_audio_fifo_interrupts() {
     // Interrupt source IDs are 1-indexed, but the ENABLE register uses bit positions starting at 0.
     let enable_mask = 1u32 << (INTERRUPT_CTRL_SOURCE_AUDIOSYS_FIFO_LOW_WATER - 1);
-    write_u32(interrupt_ctrl_enable_addr(), enable_mask);
+    let current_enable = read_u32(interrupt_ctrl_enable_addr());
+    write_u32(interrupt_ctrl_enable_addr(), current_enable | enable_mask);
 
     unsafe {
         // SAFETY: These CSR writes intentionally enable machine external interrupts
@@ -142,8 +163,8 @@ fn enable_audio_fifo_interrupts() {
 
 fn initialize_demo() -> DemoState {
     let frequency_div = INITIAL_FREQUENCY_DIV;
-    AUDIO_FREQUENCY_DIV.store(frequency_div, Ordering::Relaxed);
-    AUDIO_SAMPLE_INDEX.store(0, Ordering::Relaxed);
+    set_audio_frequency_div(frequency_div);
+    reset_audio_sample_index();
 
     write_u32(audiosys_mode_addr(), AUDIOSYS_MODE_FIFO);
     write_u32(gfx2d_control_addr(), GFX2D_CONTROL_ENABLE);
@@ -176,6 +197,11 @@ fn initialize_demo() -> DemoState {
         scroll_y: read_u32(GFX2D_BASE + GFX2D_SCROLL_Y_OFFSET),
         frequency_div,
     }
+}
+
+fn prime_audio_fifo() {
+    let fifo_space = read_u32(audiosys_fifo_space_addr());
+    fill_audio_fifo(fifo_space, fifo_space);
 }
 
 fn wait_for_next_frame(previous_frame_index: u32) -> u32 {
@@ -218,6 +244,7 @@ fn next_frequency_div(current: u32, input_state: u32) -> u32 {
 #[entry]
 fn main() -> ! {
     let mut state = initialize_demo();
+    prime_audio_fifo();
     enable_audio_fifo_interrupts();
 
     loop {
@@ -230,7 +257,7 @@ fn main() -> ! {
         state.scroll_x = state.scroll_x.wrapping_add_signed(scroll_x_delta);
         state.scroll_y = state.scroll_y.wrapping_add_signed(scroll_y_delta);
         state.frequency_div = next_frequency_div(state.frequency_div, input_state);
-        AUDIO_FREQUENCY_DIV.store(state.frequency_div, Ordering::Relaxed);
+        set_audio_frequency_div(state.frequency_div);
 
         write_u32(GFX2D_BASE + GFX2D_SCROLL_X_OFFSET, state.scroll_x);
         write_u32(GFX2D_BASE + GFX2D_SCROLL_Y_OFFSET, state.scroll_y);
