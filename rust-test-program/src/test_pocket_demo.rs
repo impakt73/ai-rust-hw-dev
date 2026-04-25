@@ -110,7 +110,7 @@ fn generate_fifo_sample_word() -> u32 {
         (frequency_div, sample_index)
     });
     let sample = generate_sine_sample(sample_index, frequency_div);
-    let packed_sample = u16::from_ne_bytes(sample.to_ne_bytes());
+    let packed_sample = sample as u16;
     audiosys_fifo_pack_stereo_sample(packed_sample, packed_sample)
 }
 
