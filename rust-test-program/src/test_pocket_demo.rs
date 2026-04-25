@@ -125,11 +125,15 @@ fn generate_fifo_sample_word() -> u32 {
     audiosys_fifo_pack_stereo_sample(packed_sample, packed_sample)
 }
 
-fn fill_audio_fifo(samples_to_write: u32, max_samples: u32) {
-    let fill_count = samples_to_write.min(max_samples);
+fn fill_audio_fifo(samples_to_write: u32, max_fill_samples: u32) {
+    let fill_count = samples_to_write.min(max_fill_samples);
     for _ in 0..fill_count {
         write_u32(audiosys_fifo_sample_addr(), generate_fifo_sample_word());
     }
+}
+
+fn fill_audio_fifo_exact(samples_to_write: u32) {
+    fill_audio_fifo(samples_to_write, u32::MAX);
 }
 
 #[external_interrupt(PocketExternalInterrupt::MachineExternal)]
@@ -201,7 +205,7 @@ fn initialize_demo() -> DemoState {
 
 fn prime_audio_fifo() {
     let fifo_space = read_u32(audiosys_fifo_space_addr());
-    fill_audio_fifo(fifo_space, fifo_space);
+    fill_audio_fifo_exact(fifo_space);
 }
 
 fn wait_for_next_frame(previous_frame_index: u32) -> u32 {
