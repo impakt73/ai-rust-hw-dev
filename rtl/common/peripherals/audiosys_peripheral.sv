@@ -171,6 +171,9 @@ module audiosys_peripheral #(
         && i2s_sample_ready
         && fifo_left_reload;
     assign fifo_space_count = AUDIO_FIFO_COUNT_WIDTH'(AUDIO_FIFO_DEPTH) - fifo_count;
+    // i2s_serializer presents sample_ready while audio_lrclk still reflects the channel that
+    // just completed, so reloading on audio_lrclk==1 aligns the next FIFO pop with the upcoming
+    // left-channel word and avoids an extra retry term.
     assign fifo_left_reload = audio_lrclk;
     assign fifo_low_water_audio =
         (audio_mode_active == AUDIO_MODE_FIFO)
@@ -190,6 +193,8 @@ module audiosys_peripheral #(
                         i2s_sample_data = '0;
                     end
                 end else begin
+                    // Suppress stale right-channel hold data until a valid stereo frame has
+                    // actually been popped from the FIFO.
                     i2s_sample_data = fifo_frame_valid ? fifo_right_hold : '0;
                 end
             end
