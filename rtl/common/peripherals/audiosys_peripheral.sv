@@ -67,7 +67,6 @@ module audiosys_peripheral #(
     logic                         tone_sample_valid;
     logic                         tone_zero_cross;
 
-    logic                         fifo_sample_write_req;
     logic                         fifo_wr_valid;
     logic                         fifo_wr_ready;
     logic [31:0]                  fifo_wdata;
@@ -109,13 +108,6 @@ module audiosys_peripheral #(
     assign periph_mem_d_rdata = response_data;
     assign periph_mem_d_valid = response_pending;
     assign periph_word_access = (periph_mem_a_size == 2'b10) && (periph_mem_a_addr[1:0] == 2'b00);
-
-    assign fifo_sample_write_req =
-        periph_mem_a_valid
-        && periph_word_access
-        && periph_mem_a_we
-        && (periph_mem_a_addr[4:0] == REG_FIFO_SAMPLE)
-        && (audio_mode_req_reg == AUDIO_MODE_FIFO);
 
     assign periph_mem_a_ready =
         !audio_rst
@@ -179,7 +171,7 @@ module audiosys_peripheral #(
         && i2s_sample_ready
         && fifo_left_reload;
     assign fifo_space_count = AUDIO_FIFO_COUNT_WIDTH'(AUDIO_FIFO_DEPTH) - fifo_count;
-    assign fifo_left_reload = !audio_lrclk || !fifo_frame_valid;
+    assign fifo_left_reload = audio_lrclk;
     assign fifo_low_water_audio =
         (audio_mode_active == AUDIO_MODE_FIFO)
         && (fifo_count < AUDIO_FIFO_COUNT_WIDTH'(AUDIO_FIFO_DEPTH / 2));
@@ -198,7 +190,7 @@ module audiosys_peripheral #(
                         i2s_sample_data = '0;
                     end
                 end else begin
-                    i2s_sample_data = fifo_right_hold;
+                    i2s_sample_data = fifo_frame_valid ? fifo_right_hold : '0;
                 end
             end
             default: begin
