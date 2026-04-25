@@ -83,6 +83,7 @@ pub const INTERRUPT_CTRL_SOURCE_TEST0: u32 = 1;
 pub const INTERRUPT_CTRL_SOURCE_TEST1: u32 = 2;
 pub const INTERRUPT_CTRL_SOURCE_TEST2: u32 = 3;
 pub const INTERRUPT_CTRL_SOURCE_TEST3: u32 = 4;
+pub const INTERRUPT_CTRL_SOURCE_AUDIOSYS_FIFO_LOW_WATER: u32 = 5;
 
 /// Gamepad Peripheral (RTL)
 /// Single 32-bit read-only register that exposes controller button state.
@@ -155,29 +156,67 @@ pub const fn interrupt_ctrl_source_count_addr() -> u32 {
 }
 
 /// Audiosys Peripheral (RTL)
-/// Two aligned 32-bit registers that control the Pocket-target tone generator.
+/// Mode register, tone-generator tuning word, FIFO sample write port, and FIFO
+/// free-space status for the Pocket-target audio system.
 /// Address: 0x6000_0000
 /// Register map:
-///   +0x00 CONTROL      [0] enable, [31:1] reserved (read as 0)
+///   +0x00 MODE         0=off, 1=tone generator, 2=fifo playback
 ///   +0x04 TUNING_WORD  phase increment for the tone generator
+///   +0x08 FIFO_SAMPLE  write-only stereo sample register
+///   +0x0C FIFO_SPACE   read-only available FIFO entries
 pub const AUDIOSYS_BASE: u32 = 0x6000_0000;
 pub const AUDIOSYS_SIZE: u32 = 0x0000_0020; // 32 bytes
 
 /// Audiosys register offsets
-pub const AUDIOSYS_CONTROL_OFFSET: u32 = 0x00;
+pub const AUDIOSYS_MODE_OFFSET: u32 = 0x00;
 pub const AUDIOSYS_TUNING_WORD_OFFSET: u32 = 0x04;
+pub const AUDIOSYS_FIFO_SAMPLE_OFFSET: u32 = 0x08;
+pub const AUDIOSYS_FIFO_SPACE_OFFSET: u32 = 0x0C;
 
-/// Audiosys CONTROL register bit masks
-pub const AUDIOSYS_CONTROL_ENABLE: u32 = 1 << 0;
+/// Compatibility alias for the old register name.
+pub const AUDIOSYS_CONTROL_OFFSET: u32 = AUDIOSYS_MODE_OFFSET;
+
+/// Audiosys MODE register encodings.
+pub const AUDIOSYS_MODE_OFF: u32 = 0;
+pub const AUDIOSYS_MODE_TONE: u32 = 1;
+pub const AUDIOSYS_MODE_FIFO: u32 = 2;
+
+/// FIFO stereo sample packing: left channel in bits [31:16], right in [15:0].
+pub const AUDIOSYS_FIFO_SAMPLE_LEFT_SHIFT: u32 = 16;
+pub const AUDIOSYS_FIFO_SAMPLE_RIGHT_SHIFT: u32 = 0;
+pub const AUDIOSYS_FIFO_SAMPLE_CHANNEL_MASK: u32 = 0xFFFF;
+
+/// Compatibility alias for software that still uses the old enable symbol.
+pub const AUDIOSYS_CONTROL_ENABLE: u32 = AUDIOSYS_MODE_TONE;
+
+/// Helper: pack a stereo FIFO sample word.
+pub const fn audiosys_fifo_pack_stereo_sample(left: u16, right: u16) -> u32 {
+    ((left as u32) << AUDIOSYS_FIFO_SAMPLE_LEFT_SHIFT) | (right as u32)
+}
+
+/// Helper: address of the Audiosys MODE register.
+pub const fn audiosys_mode_addr() -> u32 {
+    AUDIOSYS_BASE + AUDIOSYS_MODE_OFFSET
+}
 
 /// Helper: address of the Audiosys CONTROL register.
 pub const fn audiosys_control_addr() -> u32 {
-    AUDIOSYS_BASE + AUDIOSYS_CONTROL_OFFSET
+    audiosys_mode_addr()
 }
 
 /// Helper: address of the Audiosys TUNING_WORD register.
 pub const fn audiosys_tuning_word_addr() -> u32 {
     AUDIOSYS_BASE + AUDIOSYS_TUNING_WORD_OFFSET
+}
+
+/// Helper: address of the Audiosys FIFO_SAMPLE register.
+pub const fn audiosys_fifo_sample_addr() -> u32 {
+    AUDIOSYS_BASE + AUDIOSYS_FIFO_SAMPLE_OFFSET
+}
+
+/// Helper: address of the Audiosys FIFO_SPACE register.
+pub const fn audiosys_fifo_space_addr() -> u32 {
+    AUDIOSYS_BASE + AUDIOSYS_FIFO_SPACE_OFFSET
 }
 
 /// System Controller register offsets

@@ -22,7 +22,7 @@ module top #(
     parameter bit ENABLE_APF_BUS_BRIDGE = 1'b0,
     parameter int unsigned INTERRUPT_CTRL_BASE_ADDR = 32'h4000_0000,
     parameter int unsigned INTERRUPT_CTRL_ADDR_SIZE = 32'h0000_0020,
-    parameter int unsigned INTERRUPT_CTRL_NUM_SOURCES = 4,
+    parameter int unsigned INTERRUPT_CTRL_NUM_SOURCES = 5,
     // System Clock Frequency (used by system controller elapsed-time registers)
     parameter int CLK_FREQ_HZ = 50_000_000,
     parameter int RESET_CYCLES = 8,      // Number of cycles to hold reset after release
@@ -32,6 +32,7 @@ module top #(
     parameter int unsigned SDRAM_ADDR_SIZE = 32'h0400_0000,
     parameter int unsigned AUDIOSYS_BASE_ADDR = 32'h6000_0000,
     parameter int unsigned AUDIOSYS_ADDR_SIZE = 32'h0000_0020,
+    parameter int unsigned AUDIOSYS_FIFO_DEPTH = 1024,
     parameter bit ENABLE_GAMEPAD = 1'b0,
     parameter int unsigned GAMEPAD_BASE_ADDR = 32'h5000_0000,
     parameter int unsigned GAMEPAD_ADDR_SIZE = 32'h0000_0010,
@@ -256,6 +257,7 @@ module top #(
     logic [31:0] audiosys_mem_d_rdata;
     logic        audiosys_mem_d_valid;
     logic        audiosys_mem_d_ready;
+    logic        audiosys_fifo_low_water_irq;
     
     // ============================================================
     // Gamepad Peripheral Interface Signals
@@ -792,9 +794,12 @@ module top #(
         .mem_d_ready(sram_mem_d_ready)
     );
 
-    // No physical RTL interrupt sources are wired yet; software/host-driven
-    // pending injection comes through the controller MMIO registers for now.
-    assign external_irq_sources = '0;
+    always_comb begin
+        external_irq_sources = '0;
+        if (ENABLE_AUDIOSYS && (INTERRUPT_CTRL_NUM_SOURCES > 4)) begin
+            external_irq_sources[4] = audiosys_fifo_low_water_irq;
+        end
+    end
 
     external_interrupt_controller #(
         .NUM_SOURCES(INTERRUPT_CTRL_NUM_SOURCES)
@@ -901,6 +906,7 @@ module top #(
     generate
         if (ENABLE_AUDIOSYS) begin : gen_audiosys_peripheral
             audiosys_peripheral #(
+                .AUDIO_FIFO_DEPTH(AUDIOSYS_FIFO_DEPTH),
                 .INIT_FILE(AUDIOSYS_INIT_FILE)
             ) audiosys_periph (
                 .sys_clk(clk),
@@ -916,7 +922,8 @@ module top #(
                 .mem_d_valid(audiosys_mem_d_valid),
                 .mem_d_ready(audiosys_mem_d_ready),
                 .audio_dac(audio_dac),
-                .audio_lrclk(audio_lrclk)
+                .audio_lrclk(audio_lrclk),
+                .fifo_low_water_irq(audiosys_fifo_low_water_irq)
             );
         end else begin : gen_no_audiosys_peripheral
             assign audiosys_mem_a_ready = 1'b1;
@@ -924,6 +931,7 @@ module top #(
             assign audiosys_mem_d_valid = 1'b0;
             assign audio_dac = 1'b0;
             assign audio_lrclk = 1'b0;
+            assign audiosys_fifo_low_water_irq = 1'b0;
         end
     endgenerate
 

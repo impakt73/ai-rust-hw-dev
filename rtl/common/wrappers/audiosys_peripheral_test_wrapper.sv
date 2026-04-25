@@ -14,10 +14,17 @@ module audiosys_peripheral_test_wrapper (
     output logic             mem_d_valid,
     input  wire logic        mem_d_ready,
     output logic             audio_dac,
-    output logic             audio_lrclk
+    output logic             audio_lrclk,
+    output logic             fifo_low_water_irq,
+    output logic [1:0]       debug_audio_mode_active,
+    output logic             debug_i2s_sample_ready,
+    output logic signed [15:0] debug_i2s_sample_data,
+    output logic [31:0]      debug_fifo_count,
+    output logic [31:0]      debug_fifo_space
 );
 
     audiosys_peripheral #(
+        .AUDIO_FIFO_DEPTH(8),
         .INIT_FILE("../rtl/fpga/cyclonev_analogue_pocket/src/fpga/core/sine_table_init.hex")
     ) u_audiosys_peripheral (
         .sys_clk(sys_clk),
@@ -33,8 +40,15 @@ module audiosys_peripheral_test_wrapper (
         .mem_d_valid(mem_d_valid),
         .mem_d_ready(mem_d_ready),
         .audio_dac(audio_dac),
-        .audio_lrclk(audio_lrclk)
+        .audio_lrclk(audio_lrclk),
+        .fifo_low_water_irq(fifo_low_water_irq)
     );
+
+    assign debug_audio_mode_active = u_audiosys_peripheral.audio_mode_active;
+    assign debug_i2s_sample_ready = u_audiosys_peripheral.i2s_sample_ready;
+    assign debug_i2s_sample_data = u_audiosys_peripheral.i2s_sample_data;
+    assign debug_fifo_count = u_audiosys_peripheral.fifo_count;
+    assign debug_fifo_space = u_audiosys_peripheral.fifo_space_count;
 
 endmodule
 
