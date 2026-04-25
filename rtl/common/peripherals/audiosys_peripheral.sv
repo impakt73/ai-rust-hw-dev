@@ -78,6 +78,7 @@ module audiosys_peripheral #(
     logic [AUDIO_FIFO_COUNT_WIDTH-1:0] fifo_space_count;
     logic signed [15:0]           fifo_right_hold;
     logic                         fifo_frame_valid;
+    logic                         fifo_left_reload;
     logic                         fifo_low_water_audio;
 
     function automatic logic [1:0] sanitize_audio_mode(input logic [31:0] mode_value);
@@ -176,8 +177,9 @@ module audiosys_peripheral #(
     assign fifo_rd_ready =
         (audio_mode_active == AUDIO_MODE_FIFO)
         && i2s_sample_ready
-        && (!audio_lrclk || !fifo_frame_valid);
+        && fifo_left_reload;
     assign fifo_space_count = AUDIO_FIFO_COUNT_WIDTH'(AUDIO_FIFO_DEPTH) - fifo_count;
+    assign fifo_left_reload = !audio_lrclk || !fifo_frame_valid;
     assign fifo_low_water_audio =
         (audio_mode_active == AUDIO_MODE_FIFO)
         && (fifo_count < AUDIO_FIFO_COUNT_WIDTH'(AUDIO_FIFO_DEPTH / 2));
@@ -189,7 +191,7 @@ module audiosys_peripheral #(
                     (audio_lrclk || !tone_sample_hold_valid) ? tone_sample : tone_sample_hold;
             end
             AUDIO_MODE_FIFO: begin
-                if (!audio_lrclk || !fifo_frame_valid) begin
+                if (fifo_left_reload) begin
                     if (fifo_rd_valid) begin
                         i2s_sample_data = fifo_rdata[31:16];
                     end else begin
@@ -271,7 +273,7 @@ module audiosys_peripheral #(
             fifo_frame_valid <= 1'b0;
         end else if (audio_mode_active != AUDIO_MODE_FIFO) begin
             fifo_frame_valid <= 1'b0;
-        end else if (i2s_sample_ready && (!audio_lrclk || !fifo_frame_valid)) begin
+        end else if (i2s_sample_ready && fifo_left_reload) begin
             if (fifo_rd_valid) begin
                 fifo_right_hold <= fifo_rdata[15:0];
                 fifo_frame_valid <= 1'b1;
