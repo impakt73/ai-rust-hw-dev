@@ -562,7 +562,12 @@ fn validate_memtest_data(start_addr: u32, offset: u32, actual: &[u8]) -> Result<
     let mut mismatch_count = 0usize;
     let mut mismatch_details = Vec::new();
 
-    for (index, chunk) in actual.chunks_exact(MEMTEST_WORD_BYTES as usize).enumerate() {
+    for (index, chunk) in actual
+        .as_chunks::<{ MEMTEST_WORD_BYTES as usize }>()
+        .0
+        .iter()
+        .enumerate()
+    {
         let word_index = u32::try_from(index)
             .map_err(|_| format!("Memtest index {} does not fit in u32.", index))?;
         let byte_offset = word_index
