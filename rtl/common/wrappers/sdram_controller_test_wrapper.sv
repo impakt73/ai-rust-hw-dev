@@ -129,6 +129,11 @@ module sdram_controller_test_harness #(
     );
 
     always_ff @(posedge chip_clk) begin
+        automatic int unsigned read_slot;
+        automatic int unsigned write_index;
+        read_slot = read_pipeline_slot(loaded_mode_reg[6:4]);
+        write_index = flat_halfword_index(phy_ba, active_row[int'(phy_ba)], phy_a[9:0]);
+
         if (rst) begin
             for (int unsigned bank = 0; bank < BANK_COUNT; bank++) begin
                 active_row[bank] <= '0;
@@ -173,8 +178,8 @@ module sdram_controller_test_harness #(
 
                 CMD_READ: begin
                     if (active_row_valid[int'(phy_ba)]) begin
-                        read_valid_pipe[read_pipeline_slot(loaded_mode_reg[6:4])] <= 1'b1;
-                        read_data_pipe[read_pipeline_slot(loaded_mode_reg[6:4])] <=
+                        read_valid_pipe[read_slot] <= 1'b1;
+                        read_data_pipe[read_slot] <=
                             read_halfword(phy_ba, active_row[int'(phy_ba)], phy_a[9:0]);
                     end
                     read_cmd_count <= read_cmd_count + 1'b1;
@@ -183,11 +188,11 @@ module sdram_controller_test_harness #(
                 CMD_WRITE: begin
                     if (active_row_valid[int'(phy_ba)]) begin
                         if (!phy_dqm[0]) begin
-                            halfword_mem[flat_halfword_index(phy_ba, active_row[int'(phy_ba)], phy_a[9:0])][7:0]
+                            halfword_mem[write_index][7:0]
                                 <= phy_dq[7:0];
                         end
                         if (!phy_dqm[1]) begin
-                            halfword_mem[flat_halfword_index(phy_ba, active_row[int'(phy_ba)], phy_a[9:0])][15:8]
+                            halfword_mem[write_index][15:8]
                                 <= phy_dq[15:8];
                         end
                     end
