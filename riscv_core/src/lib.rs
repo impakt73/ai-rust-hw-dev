@@ -1,4 +1,6 @@
 // Re-export marlin for convenience
+use camino::Utf8Path;
+
 pub use marlin::verilator::vcd::Vcd;
 pub use marlin::verilator::{
     AsDynamicVerilatedModel, VerilatedModelConfig, VerilatorRuntime, VerilatorRuntimeOptions,
@@ -361,7 +363,10 @@ fn create_runtime(files: &[&str]) -> Result<VerilatorRuntime, Box<dyn std::error
         .collect();
 
     // Convert to references that can be passed to VerilatorRuntime::new
-    let file_refs: Vec<&str> = file_paths.iter().map(|s| s.as_str()).collect();
+    let file_refs: Vec<&Utf8Path> = file_paths
+        .iter()
+        .map(|s| Utf8Path::new(s.as_str()))
+        .collect();
 
     // Set up include paths for Verilator to find all RTL modules
     // This includes the main RTL directory and all subdirectories
@@ -372,24 +377,25 @@ fn create_runtime(files: &[&str]) -> Result<VerilatorRuntime, Box<dyn std::error
     let io_path = format!("{}/io", rtl_path);
     let wrappers_path = format!("{}/wrappers", rtl_path);
     let peripherals_path = format!("{}/peripherals", rtl_path);
-    let include_paths = [
-        rtl_path,
-        cpu_path.as_str(),
-        fpu_path.as_str(),
-        memory_path.as_str(),
-        primitives_path.as_str(),
-        io_path.as_str(),
-        wrappers_path.as_str(),
-        peripherals_path.as_str(),
+    let include_path_strings = [
+        rtl_path.to_string(),
+        cpu_path,
+        fpu_path,
+        memory_path,
+        primitives_path,
+        io_path,
+        wrappers_path,
+        peripherals_path,
     ];
+    let include_paths: Vec<&Utf8Path> = include_path_strings
+        .iter()
+        .map(|s| Utf8Path::new(s.as_str()))
+        .collect();
 
     VerilatorRuntime::new(
-        "target/verilator".into(),
-        &file_refs.iter().map(|s| (*s).as_ref()).collect::<Vec<_>>(),
-        &include_paths
-            .iter()
-            .map(|s| (*s).as_ref())
-            .collect::<Vec<_>>(),
+        Utf8Path::new("target/verilator"),
+        &file_refs,
+        &include_paths,
         [],
         VerilatorRuntimeOptions::default(),
     )

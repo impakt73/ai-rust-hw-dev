@@ -4,7 +4,5 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-marlin = { git = "https://github.com/impakt73/marlin", rev = "48731fc5bc0a54de01681f6c2736a1cb8f7736ad", features = ["verilog"] }
-
-[build-dependencies]
-marlin = { git = "https://github.com/impakt73/marlin", rev = "48731fc5bc0a54de01681f6c2736a1cb8f7736ad", features = ["verilog"] }
+marlin = { git = "https://github.com/impakt73/marlin", rev = "bc388f18bbf792219ad3810f92ff72e2e1388f21", features = ["verilog"] }
+camino = "1.1"
