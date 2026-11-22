@@ -11,29 +11,26 @@
 ## Status
 
 The original conclusion in this document was based on **marlin 0.10.0**. The
-repository now pins **marlin 0.11.1** (`48731fc5bc0a54de01681f6c2736a1cb8f7736ad`),
-and the specific thread-lock registry race described below has been fixed
-upstream. It is **not** the cause of the current failures.
+specific thread-lock registry race described below was fixed upstream and is
+**not** the cause of the current failures.
 
-Revalidation under marlin 0.11.1 and Verilator 5.032 shows a different failure:
-the generated Verilator model shared library is unloaded while Verilator's static
-runtime state is still referenced. The original marlin 0.10.0 analysis is
-retained at the end of this document as historical context, but the current root
-cause and recommendations below supersede it.
+Revalidation under marlin 0.11.1 and Verilator 5.032 showed a different failure:
+the generated Verilator model shared library was unloaded while Verilator's
+static default context was still referenced. That root cause is now fixed by
+marlin's explicit `VerilatedContext` ownership, pinned at fork revision
+`bc388f18bbf792219ad3810f92ff72e2e1388f21`.
 
-A repository-level mitigation is now implemented: `riscv_core::VerilatorRuntime`
-wraps marlin's runtime and serializes model construction and runtime teardown
-with a process-global lock. That prevents overlapping model-library load/unload
-cycles while still allowing tests themselves to execute in parallel.
+The interim repository-level lifecycle lock has been removed. Parallel test
+execution now relies on marlin owning one context per loaded model library.
 
 ## Executive Summary
 
-Current reproduction:
+Original reproduction under the old pin:
 
-- `testbench` FPU tests (`fpu_family_test`) pass consistently with
+- `testbench` FPU tests (`fpu_family_test`) passed consistently with
   `--test-threads=1`, `2`, or `4`.
-- At `--test-threads=8`, `12`, and `16`, the process fails intermittently.
-  Typical outcomes are:
+- At `--test-threads=8`, `12`, and `16`, the process failed intermittently.
+  Typical outcomes were:
   - all 51 tests print `test result: ok`, followed by a process SIGSEGV during
     teardown, or
   - a test aborts while creating a model with:
@@ -43,7 +40,7 @@ Current reproduction:
     Aborting...
     ```
 
-- A signal backtrace from the failing process lands in the generated model
+- A signal backtrace from the failing process landed in the generated model
   library:
 
   ```text
@@ -57,10 +54,10 @@ Current reproduction:
   in the control runs (`3` failures, all with the bad/deleted
   `VerilatedContext` message).
 
-The evidence therefore points to **library/context lifetime management during
+The evidence therefore pointed to **library/context lifetime management during
 unload**, not to concurrent Verilator build-directory access. The repository’s
 shared `target/verilator` root remains a scalability concern, but it is not
-sufficient to explain the current crash.
+sufficient to explain the crash.
 
 ## Scope and Versions (Current)
 
@@ -70,15 +67,17 @@ sufficient to explain the current crash.
 - `marlin-verilog-macro 0.11.1`
 - `marlin-verilog-macro-builder 0.11.1`
 - Verilator 5.032 (Ubuntu distro package used for the local reproduction)
+- marlin fork revision `bc388f18bbf792219ad3810f92ff72e2e1388f21`
+  (`fix/explicit-verilated-context`)
 
 The pin is recorded in `Cargo.lock` under the `marlin` package entry.
 
 ## How This Repository Uses Marlin
 
-### `riscv_core` wraps runtime creation
+### `riscv_core` re-exports the marlin runtime
 
 `riscv_core` depends on marlin as a normal dependency and re-exports its runtime
-and model types. The critical helper is:
+and model types directly. The critical helper is:
 
 - `create_runtime(files: &[&str]) -> Result<VerilatorRuntime, ...>` in
   `riscv_core/src/lib.rs`
@@ -87,7 +86,7 @@ It still hardcodes the shared artifact root:
 
 ```rust
 VerilatorRuntime::new(
-    "target/verilator".into(),
+    Utf8Path::new("target/verilator"),
     ...
 )
 ```
@@ -168,12 +167,35 @@ unloading disabled, the same 16-thread test passed five consecutive times
 evidence that unloading the shared library while other Verilated state is still
 in use is the failure trigger.
 
-The exact defect boundary (marlin library lifetime management, Verilator's
-static context handling, or the platform loader interaction) has not been fully
-isolated. What is established is that the current failures require library
-unload to occur; avoiding unload avoids the crashes in this environment.
+The exact defect boundary was Verilator's static default context inside each
+generated model library. Marlin constructed models with the generated
+no-argument constructor, which falls back to that library-local
+`Verilated::defaultContextp()`. When one runtime unloaded its copy of the library
+while another thread still held Verilator state tied to that context, the
+remaining thread could observe a deleted context or corrupt hierarchy state.
 
-### 4. Build concurrency is still a separate concern
+### 4. Explicit context ownership fixes the unload lifetime
+
+The fork now gives every loaded model library an explicitly owned
+`VerilatedContext`:
+
+- generated libraries export `ffi_new_context`, `ffi_delete_context`, and
+  `ffi_set_thread_context`,
+- models are constructed with `new V{top}{context}` and
+  `AsVerilatedModel::init_from` receives that context,
+- the context lives in the same arena entry as the loaded `Library`,
+- runtime teardown deallocates models first, then deletes the context, then
+  unloads the library,
+- tracing uses `VerilatedContext::traceEverOn` rather than the global
+  `Verilated::traceEverOn`,
+- the per-library thread context is set before model construction and one-time
+  library setup.
+
+This removes the dependency on the library's static default context, so lazy
+loading and normal runtime teardown remain safe without serializing tests. The
+fork commit notes the breaking `AsVerilatedModel::init_from` API change.
+
+### 5. Build concurrency is still a separate concern
 
 Marlin still invokes Verilator with:
 
@@ -188,18 +210,18 @@ crash signature after artifacts are already built.
 
 ## Current Limitations
 
-1. **Model libraries are unloaded with the runtime**
+1. **Model libraries are still unloaded with the runtime**
    - runtimes own `libloading::Library` handles
-   - dropping the runtime can unload the library
-   - Verilator static state lives in that library
+   - the explicit context makes unload safe, but unloading still costs time
 
-2. **No “keep library loaded” option is exposed by the repository**
-   - each test worker can load and unload its own runtime/model libraries
-   - high thread counts create overlapping load/unload cycles
+2. **One context per loaded library**
+   - models from the same runtime share a context, which matches the expected
+     single-threaded use of a runtime
+   - sharing a runtime and its models across threads is still unsupported
 
 3. **Shared artifact root in this repository**
    - `riscv_core` still hardcodes `target/verilator`
-   - this increases build contention, but is not the current crash cause
+   - this increases build contention, but is not a crash cause
 
 4. **No global build concurrency limit**
    - different models can build concurrently
@@ -208,61 +230,47 @@ crash signature after artifacts are already built.
 5. **Models/runtimes are not thread-shareable**
    - one runtime/model must stay private to one owner
 
-6. **Tracing uses global Verilator state**
-   - traced large-scale concurrency is harder than non-traced runs
-
 ## Recommendations
 
-### Immediate mitigation
+### Implemented fix
 
-Avoid unloading marlin model libraries while the process can still create or
-destroy Verilated state. Practical options, in rough order of preference:
+Use the marlin fork revision pinned in `Cargo.lock`, which owns one
+`VerilatedContext` per loaded model library and deletes it before unloading the
+library. The interim `riscv_core::VerilatorRuntime` wrapper and process-global
+lifecycle lock have been removed; `riscv_core` re-exports marlin's runtime
+directly.
 
-1. **Keep runtimes alive for the process lifetime** in test binaries, rather
-   than letting short-lived worker threads drop them.
-2. **Expose/use a no-unload loader option** (`RTLD_NODELETE` or equivalent) for
-   marlin-generated libraries.
-3. **Use process isolation**: run heavy test binaries with a single test thread
-   per process, or split tests so each process has a simpler library lifetime.
-4. **Upgrade the marlin/Verilator combination** after verifying upstream fixes
-   for the context/library lifetime behavior.
+The full parallel `cargo test` suite passes both warm and after clearing all
+per-package `target/verilator` directories. The previously failing 16-thread
+`fpu_family_test` and `host_bus_test` binaries pass repeatedly without the
+lifecycle lock.
 
-Serializing tests with `--test-threads=1` avoids the immediate crash, but it is
-a workaround for the observed lifecycle pattern rather than a root-cause fix.
+### Alternatives considered
 
-### Implemented mitigation
+- **Keep generated libraries loaded for the process lifetime** (`RTLD_NODELETE`
+  or similar) also avoids the symptom, but it preserves ambiguous ownership and
+  leaks library mappings. It is not the chosen design.
+- **Serialize tests with `--test-threads=1`** avoids the crash but gives up
+  parallel execution and does not address the lifetime problem.
+- **Worker-unique artifact roots** remain a possible response to build-directory
+  contention, but do not fix library/context lifetime.
 
-`riscv_core::VerilatorRuntime` now wraps marlin's runtime and holds a
-process-global lifecycle lock while:
+### Follow-up
 
-- constructing a model (`create_model` / `create_model_simple`), and
-- dropping the runtime (which unloads the generated library).
-
-This serializes library load/unload operations without serializing test
-execution. The full parallel `cargo test` suite passes both warm and after
-clearing all per-package `target/verilator` directories, and the local
-CI-equivalent script passes end to end.
-
-### Long-term
-
-- Add a marlin option to keep generated libraries loaded for the process
-  lifetime, or fix the library lifetime/context ownership in marlin/Verilator.
 - Keep the per-directory build lock atomic (already true in marlin 0.11.1).
 - Add a global build throttle so cold runs do not launch many `-j 0` Verilator
   builds at once.
-- Consider worker-unique artifact roots if build-directory contention returns,
-  but do not treat them as a fix for the current unload-related crashes.
 
 ## Reproduction Commands
 
 ```bash
-# Fails intermittently in this environment (Verilator 5.032, marlin 0.11.1)
+# Fixed pin: pass repeatedly without a lifecycle lock
 cargo test -p testbench --test fpu_family_test -- --test-threads=16
+cargo test -p testbench --test host_bus_test -- --test-threads=16
+cargo test
 
-# Control: passes consistently
-cargo test -p testbench --test fpu_family_test -- --test-threads=1
-
-# Diagnostic: disabling dlclose avoided the failures in 5/5 runs
+# Historical diagnostic under the old pin: disabling dlclose avoided the
+# failures in 5/5 runs, versus 2/5 control runs
 cat >/tmp/nodlclose.c <<'EOF'
 int dlclose(void *handle) { (void)handle; return 0; }
 EOF
@@ -305,17 +313,17 @@ worker-unique artifact roots.
 
 ## Conclusion
 
-The current high-concurrency failures are best explained by unloading generated
-marlin/Verilator shared libraries while Verilator static context and hierarchy
-state are still in use. The marlin 0.10.0 build-lock race described in the
-original document has been fixed and is not the present cause.
+The current high-concurrency failures came from unloading a generated
+marlin/Verilator shared library while another thread still referenced Verilator
+state tied to that library's static default context. The marlin 0.10.0
+build-lock race described in the original document had already been fixed and
+was not the present cause.
 
-For the current repository, the priority is controlling model-library lifetime
-(keep libraries loaded, isolate heavy tests by process, or upgrade to a fixed
-marlin/Verilator combination). Worker-unique artifact roots and build throttles
-remain useful for cold-build scalability, but they do not address the observed
-crash.
+The fix is explicit context ownership in marlin: each loaded model library owns
+a `VerilatedContext`, models are constructed with it, and it is destroyed before
+the library unloads. This keeps lazy loading, normal teardown, and parallel test
+execution safe without a repository-level lifecycle lock.
 
-The implemented mitigation serializes model construction and runtime teardown in
-`riscv_core::VerilatorRuntime`. That is sufficient to pass the full parallel test
-suite in this environment while keeping test execution concurrent.
+The interim `riscv_core::VerilatorRuntime` wrapper and process-global lock have
+been removed. Worker-unique artifact roots and build throttles remain useful for
+cold-build scalability, but are unrelated to the fixed crash.

@@ -1,99 +1,11 @@
 // Re-export marlin for convenience
-use std::ops::Deref;
-use std::sync::{Mutex, MutexGuard};
+use camino::Utf8Path;
 
 pub use marlin::verilator::vcd::Vcd;
 pub use marlin::verilator::{
-    AsDynamicVerilatedModel, VerilatedModelConfig, VerilatorRuntime as MarlinVerilatorRuntime,
-    VerilatorRuntimeOptions,
+    AsDynamicVerilatedModel, VerilatedModelConfig, VerilatorRuntime, VerilatorRuntimeOptions,
 };
 pub use marlin::verilog::prelude::*;
-
-static RUNTIME_LIFECYCLE_LOCK: Mutex<()> = Mutex::new(());
-
-fn runtime_lifecycle_guard() -> MutexGuard<'static, ()> {
-    RUNTIME_LIFECYCLE_LOCK
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-}
-
-/// Runtime wrapper that serializes model construction and runtime teardown.
-///
-/// Marlin loads each generated model as a shared library and unloads it when
-/// the runtime is dropped. Verilator keeps static context and hierarchy state
-/// inside that library, and concurrent load/unload cycles can otherwise leave
-/// another test thread with a deleted `VerilatedContext` pointer. Serializing
-/// model construction and runtime destruction keeps library load/unload from
-/// overlapping, while allowing tests themselves to execute in parallel.
-pub struct VerilatorRuntime {
-    inner: Option<MarlinVerilatorRuntime>,
-}
-
-impl VerilatorRuntime {
-    fn new(
-        artifact_directory: &str,
-        source_files: &[&str],
-        include_directories: &[&str],
-        options: VerilatorRuntimeOptions,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
-        let runtime = MarlinVerilatorRuntime::new(
-            artifact_directory.into(),
-            &source_files
-                .iter()
-                .map(|s| (*s).as_ref())
-                .collect::<Vec<_>>(),
-            &include_directories
-                .iter()
-                .map(|s| (*s).as_ref())
-                .collect::<Vec<_>>(),
-            [],
-            options,
-        )
-        .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
-
-        Ok(Self {
-            inner: Some(runtime),
-        })
-    }
-
-    pub fn create_model_simple<'ctx, M: AsVerilatedModel<'ctx>>(
-        &'ctx self,
-    ) -> Result<M, Box<dyn std::error::Error>> {
-        let _guard = runtime_lifecycle_guard();
-        self.inner
-            .as_ref()
-            .expect("runtime was already dropped")
-            .create_model_simple()
-            .map_err(|e| e.into())
-    }
-
-    pub fn create_model<'ctx, M: AsVerilatedModel<'ctx>>(
-        &'ctx self,
-        config: &VerilatedModelConfig,
-    ) -> Result<M, Box<dyn std::error::Error>> {
-        let _guard = runtime_lifecycle_guard();
-        self.inner
-            .as_ref()
-            .expect("runtime was already dropped")
-            .create_model(config)
-            .map_err(|e| e.into())
-    }
-}
-
-impl Deref for VerilatorRuntime {
-    type Target = MarlinVerilatorRuntime;
-
-    fn deref(&self) -> &Self::Target {
-        self.inner.as_ref().expect("runtime was already dropped")
-    }
-}
-
-impl Drop for VerilatorRuntime {
-    fn drop(&mut self) {
-        let _guard = runtime_lifecycle_guard();
-        self.inner.take();
-    }
-}
 
 // Disassembler module
 pub mod disasm;
@@ -451,7 +363,10 @@ fn create_runtime(files: &[&str]) -> Result<VerilatorRuntime, Box<dyn std::error
         .collect();
 
     // Convert to references that can be passed to VerilatorRuntime::new
-    let file_refs: Vec<&str> = file_paths.iter().map(|s| s.as_str()).collect();
+    let file_refs: Vec<&Utf8Path> = file_paths
+        .iter()
+        .map(|s| Utf8Path::new(s.as_str()))
+        .collect();
 
     // Set up include paths for Verilator to find all RTL modules
     // This includes the main RTL directory and all subdirectories
@@ -462,23 +377,29 @@ fn create_runtime(files: &[&str]) -> Result<VerilatorRuntime, Box<dyn std::error
     let io_path = format!("{}/io", rtl_path);
     let wrappers_path = format!("{}/wrappers", rtl_path);
     let peripherals_path = format!("{}/peripherals", rtl_path);
-    let include_paths = [
-        rtl_path,
-        cpu_path.as_str(),
-        fpu_path.as_str(),
-        memory_path.as_str(),
-        primitives_path.as_str(),
-        io_path.as_str(),
-        wrappers_path.as_str(),
-        peripherals_path.as_str(),
+    let include_path_strings = [
+        rtl_path.to_string(),
+        cpu_path,
+        fpu_path,
+        memory_path,
+        primitives_path,
+        io_path,
+        wrappers_path,
+        peripherals_path,
     ];
+    let include_paths: Vec<&Utf8Path> = include_path_strings
+        .iter()
+        .map(|s| Utf8Path::new(s.as_str()))
+        .collect();
 
     VerilatorRuntime::new(
-        "target/verilator",
+        Utf8Path::new("target/verilator"),
         &file_refs,
         &include_paths,
+        [],
         VerilatorRuntimeOptions::default(),
     )
+    .map_err(|e| e.into())
 }
 
 // Helper function to create a runtime for the full CPU

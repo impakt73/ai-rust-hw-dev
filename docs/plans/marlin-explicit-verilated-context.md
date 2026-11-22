@@ -2,8 +2,11 @@
 
 ## 1. Status
 
-- **State:** Proposed, not started
+- **State:** Implemented
 - **Created:** 2026-11-22
+- **Completed:** 2026-11-22
+- **Fork revision:** `bc388f18bbf792219ad3810f92ff72e2e1388f21`
+  (`impakt73/marlin` branch `fix/explicit-verilated-context`)
 - **Scope:** marlin fork + this repository's pin and runtime wrapper
 - **Primary goal:** give each marlin runtime/model library an explicitly owned `VerilatedContext`, so unloading the generated shared library is safe in multithreaded test processes.
 
@@ -439,13 +442,13 @@ state or thread-local context pointers may still be active.
 
 ## 13. Handoff Checklist
 
-- [ ] New marlin fork branch exists and is pushed
-- [ ] New fork revision recorded
-- [ ] `riscv_core/Cargo.toml` and `Cargo.lock` updated
-- [ ] interim runtime wrapper and lifecycle lock removed
-- [ ] cold and warm full `cargo test` pass
-- [ ] repeated 16-thread fpu and host-bus tests pass
-- [ ] `./scripts/run-ci-local.sh` passes
-- [ ] VCD/tracing and DPI paths tested
-- [ ] research document updated
+- [x] New marlin fork branch exists and is pushed
+- [x] New fork revision recorded
+- [x] `riscv_core/Cargo.toml` and `Cargo.lock` updated
+- [x] interim runtime wrapper and lifecycle lock removed
+- [x] cold and warm full `cargo test` pass
+- [x] repeated 16-thread fpu and host-bus tests pass
+- [x] `./scripts/run-ci-local.sh` passes
+- [x] VCD/tracing and DPI paths tested
+- [x] research document updated
 - [ ] final commit(s) prepared for review
