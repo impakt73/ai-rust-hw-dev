@@ -21,6 +21,11 @@ runtime state is still referenced. The original marlin 0.10.0 analysis is
 retained at the end of this document as historical context, but the current root
 cause and recommendations below supersede it.
 
+A repository-level mitigation is now implemented: `riscv_core::VerilatorRuntime`
+wraps marlin's runtime and serializes model construction and runtime teardown
+with a process-global lock. That prevents overlapping model-library load/unload
+cycles while still allowing tests themselves to execute in parallel.
+
 ## Executive Summary
 
 Current reproduction:
@@ -225,6 +230,19 @@ destroy Verilated state. Practical options, in rough order of preference:
 Serializing tests with `--test-threads=1` avoids the immediate crash, but it is
 a workaround for the observed lifecycle pattern rather than a root-cause fix.
 
+### Implemented mitigation
+
+`riscv_core::VerilatorRuntime` now wraps marlin's runtime and holds a
+process-global lifecycle lock while:
+
+- constructing a model (`create_model` / `create_model_simple`), and
+- dropping the runtime (which unloads the generated library).
+
+This serializes library load/unload operations without serializing test
+execution. The full parallel `cargo test` suite passes both warm and after
+clearing all per-package `target/verilator` directories, and the local
+CI-equivalent script passes end to end.
+
 ### Long-term
 
 - Add a marlin option to keep generated libraries loaded for the process
@@ -297,3 +315,7 @@ For the current repository, the priority is controlling model-library lifetime
 marlin/Verilator combination). Worker-unique artifact roots and build throttles
 remain useful for cold-build scalability, but they do not address the observed
 crash.
+
+The implemented mitigation serializes model construction and runtime teardown in
+`riscv_core::VerilatorRuntime`. That is sufficient to pass the full parallel test
+suite in this environment while keeping test execution concurrent.

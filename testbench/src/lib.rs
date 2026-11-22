@@ -30,9 +30,7 @@ fn testbench_model_config() -> VerilatedModelConfig {
 pub fn create_testbench_model<'ctx, M: AsVerilatedModel<'ctx>>(
     runtime: &'ctx VerilatorRuntime,
 ) -> Result<M, Box<dyn std::error::Error>> {
-    runtime
-        .create_model(&testbench_model_config())
-        .map_err(|err| err.into())
+    runtime.create_model(&testbench_model_config())
 }
 
 /// Executes `f` with a per-thread cached Verilator runtime for the requested DUT family.
